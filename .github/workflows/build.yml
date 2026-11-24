@@ -43,7 +43,7 @@ jobs:
           cmake --build gts-pc/build
           cp gts-pc/build/GTS.exe bin/
           cp gts-pc/LICENSE bin/LICENSE-GTS.txt
-          ldd bin/GTS.exe | grep -i ucrt64 | awk '{print $3}' | xargs -I{} cp -n {} bin/
+          ldd bin/GTS.exe | grep -i ucrt64 | awk '{print $3}' | xargs -I{} cp -u {} bin/
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
