@@ -34,7 +34,7 @@ def toolchain_status() -> tuple[bool, str]:
     git = shutil.which("git")
     if not cmake:
         return False, ("CMake introuvable. Installe CMake, un compilateur C, SDL2 et libusb "
-                       "(Windows : MSYS2 → voir README).")
+                       "(Windows : MSYS2 UCRT64 → voir README).")
     msg = f"CMake : {cmake}"
     msg += f"\nGit : {git}" if git else "\nGit absent : les sources seront téléchargées en archive."
     return True, msg

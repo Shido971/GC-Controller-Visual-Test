@@ -90,7 +90,7 @@ Compilation manuelle :
 
 ```bash
 # Linux : sudo apt install cmake libsdl2-dev libusb-1.0-0-dev
-# Windows : MSYS2 MINGW64 → pacman -S mingw-w64-x86_64-{gcc,cmake,ninja,pkgconf,SDL2,libusb} git
+# Windows : MSYS2 UCRT64 → pacman -S mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,SDL2,libusb} git
 cmake -S vct-pc -B vct-pc/build -DCMAKE_BUILD_TYPE=Release
 cmake --build vct-pc/build
 vct-pc/build/VisualControllerTest --help

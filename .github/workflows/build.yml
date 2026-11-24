@@ -14,15 +14,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           install: >-
             git
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-libusb
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-libusb
       - name: Build Visual Controller Test (PC)
         run: |
           cmake -S vct-pc -B vct-pc/build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -30,8 +30,8 @@ jobs:
           (cd vct-pc/build && ctest --output-on-failure)
           mkdir -p bin
           cp vct-pc/build/VisualControllerTest.exe bin/
-          # DLL nécessaires (SDL2, libusb, runtime MinGW)
-          ldd bin/VisualControllerTest.exe | grep -i mingw64 | awk '{print $3}' | xargs -I{} cp {} bin/
+          # DLL nécessaires (SDL2, libusb, runtime UCRT64)
+          ldd bin/VisualControllerTest.exe | grep -i ucrt64 | awk '{print $3}' | xargs -I{} cp {} bin/
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
