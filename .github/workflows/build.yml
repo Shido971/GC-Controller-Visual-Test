@@ -88,3 +88,34 @@ jobs:
         with:
           name: PhobGCCTool-android
           path: android/app/build/outputs/apk/release/app-release.apk
+
+  # Publie une release quand un tag v* est poussé (ex. git tag v0.1.0 && git push origin v0.1.0)
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Préparer les fichiers
+        run: |
+          V="${GITHUB_REF_NAME}"
+          mkdir -p rel pkg/win pkg/linux
+          cp artifacts/PhobGCCTool-android/app-release.apk "rel/PhobGCCTool-android-$V.apk"
+          cp -r artifacts/PhobGCCTool-windows pkg/win/PhobGCCTool
+          (cd pkg/win && zip -qr "../../rel/PhobGCCTool-windows-$V.zip" PhobGCCTool)
+          cp -r artifacts/PhobGCCTool-linux pkg/linux/PhobGCCTool
+          chmod +x pkg/linux/PhobGCCTool/PhobGCCTool pkg/linux/PhobGCCTool/_internal/bin/VisualControllerTest || true
+          tar -C pkg/linux -czf "rel/PhobGCCTool-linux-$V.tar.gz" PhobGCCTool
+          ls -la rel
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" rel/* \
+            --title "PhobGCC Tool $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md
