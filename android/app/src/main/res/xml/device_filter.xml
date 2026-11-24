@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptateur GameCube officiel Nintendo WUP-028 (057E:0337) -->
+    <usb-device vendor-id="1406" product-id="823" />
+    <!-- RP2040 en mode BOOTSEL (2E8A:0003) : PhobGCC 2 -->
+    <usb-device vendor-id="11914" product-id="3" />
+    <!-- Teensy en mode programmation HalfKay (16C0:0478) : PhobGCC 1.x -->
+    <usb-device vendor-id="5824" product-id="1144" />
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#1E1B2E</item>
+        <item name="android:colorPrimaryDark">#1E1B2E</item>
+        <item name="android:colorAccent">#8F7BEA</item>
+        <item name="android:windowBackground">#1E1B2E</item>
+        <item name="android:textColorPrimary">#E8E4FF</item>
+        <item name="android:textColorSecondary">#8A84A8</item>
+    </style>
+    <style name="VctTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#000000</item>
+    </style>
+</resources>

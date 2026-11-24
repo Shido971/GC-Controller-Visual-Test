@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+vct-pc/build/
+build/
+dist/
+bin/
+vct-pc/third_party/

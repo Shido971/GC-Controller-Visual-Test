@@ -1,0 +1,90 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-libusb
+      - name: Build Visual Controller Test (PC)
+        run: |
+          cmake -S vct-pc -B vct-pc/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build vct-pc/build
+          (cd vct-pc/build && ctest --output-on-failure)
+          mkdir -p bin
+          cp vct-pc/build/VisualControllerTest.exe bin/
+          # DLL nécessaires (SDL2, libusb, runtime MinGW)
+          ldd bin/VisualControllerTest.exe | grep -i mingw64 | awk '{print $3}' | xargs -I{} cp {} bin/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Package GUI
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt pyinstaller
+          python tests/test_core.py
+          pyinstaller --noconfirm packaging/phobtool.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhobGCCTool-windows
+          path: dist/PhobGCCTool
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libusb-1.0-0-dev cmake
+      - name: Build Visual Controller Test (PC)
+        run: |
+          cmake -S vct-pc -B vct-pc/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build vct-pc/build -j
+          (cd vct-pc/build && ctest --output-on-failure)
+          mkdir -p bin && cp vct-pc/build/VisualControllerTest bin/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install -r requirements.txt pyinstaller
+          python tests/test_core.py
+          pyinstaller --noconfirm packaging/phobtool.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhobGCCTool-linux
+          path: dist/PhobGCCTool
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Dépendances natives (SDL2, sources VCT)
+        run: bash android/fetch_deps.sh
+      - name: Tests + APK
+        run: gradle -p android testReleaseUnitTest assembleRelease --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhobGCCTool-android
+          path: android/app/build/outputs/apk/release/app-release.apk
