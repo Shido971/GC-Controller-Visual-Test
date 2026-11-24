@@ -77,11 +77,12 @@ target_include_directories(vct_pc PRIVATE compat src "${STB_INCLUDE_DIR}" "${GEN
 
 # The upstream file is compiled untouched: its main() becomes vct_main(),
 # and C99 inline semantics are relaxed the way devkitPPC's GCC accepted them.
-set_source_files_properties("${UPSTREAM}/source/main.c" PROPERTIES COMPILE_DEFINITIONS "main=vct_main")
+set(RENAME_MAIN_H "${CMAKE_CURRENT_SOURCE_DIR}/compat/rename_main.h")
 if(NOT MSVC)
   set_source_files_properties("${UPSTREAM}/source/main.c" PROPERTIES
-    COMPILE_OPTIONS "-fgnu89-inline;-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-format;-Wno-int-conversion")
+    COMPILE_OPTIONS "-include;${RENAME_MAIN_H};-fgnu89-inline;-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-format;-Wno-int-conversion")
 else()
+  set_source_files_properties("${UPSTREAM}/source/main.c" PROPERTIES COMPILE_OPTIONS "/FI${RENAME_MAIN_H}")
   target_compile_definitions(vct_pc PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
 endif()
 
