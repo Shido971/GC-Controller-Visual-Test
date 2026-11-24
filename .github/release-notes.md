@@ -12,8 +12,12 @@
 - Calibration guidée en direct via l'adaptateur GameCube
 - Test de snapback (méthode GTS)
 - Visual Controller Test en natif (PC et Android)
+- GTS (GCC Test Suite) en natif (PC et Android) : test manette, oscilloscopes, gâchettes, coordonnées Melee, gate…
 
 ## À savoir
 - **Windows** : l'adaptateur GameCube a besoin du pilote **WinUSB** (installé avec Zadig, comme pour Dolphin).
 - **Android** : un câble ou adaptateur **OTG** est nécessaire. L'APK est signé avec une clé de développement (installation directe, pas via le Play Store).
 - Pas encore testé sur du matériel réel : tout retour est bienvenu dans les Issues.
+
+## Licences
+GTS (greenwave-1) est distribué sous licence **GPL-3.0** ; ses sources et celles du portage sont dans ce dépôt (`gts-pc/`).

@@ -12,6 +12,10 @@ datas = [
     (str(root / "vct-pc" / "compat"), "vct-pc/compat"),
     (str(root / "vct-pc" / "src"), "vct-pc/src"),
     (str(root / "vct-pc" / "tests"), "vct-pc/tests"),
+    (str(root / "gts-pc" / "CMakeLists.txt"), "gts-pc"),
+    (str(root / "gts-pc" / "cmake"), "gts-pc/cmake"),
+    (str(root / "gts-pc" / "compat"), "gts-pc/compat"),
+    (str(root / "gts-pc" / "src"), "gts-pc/src"),
     (str(root / "packaging" / "51-gcadapter.rules"), "packaging"),
 ]
 if (root / "bin").is_dir():

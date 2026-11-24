@@ -50,3 +50,18 @@ def vct_source_dir() -> Path:
 
 def vct_exe_name() -> str:
     return "VisualControllerTest.exe" if sys.platform == "win32" else "VisualControllerTest"
+
+
+def gts_build_dir() -> Path:
+    d = data_dir() / "gts-build"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def gts_source_dir() -> Path:
+    """Sources du portage PC de GTS (CMake) livrées avec l'outil."""
+    return bundled_root() / "gts-pc"
+
+
+def gts_exe_name() -> str:
+    return "GTS.exe" if sys.platform == "win32" else "GTS"

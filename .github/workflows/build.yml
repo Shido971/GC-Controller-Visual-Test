@@ -37,6 +37,13 @@ jobs:
           cp vct-pc/build/VisualControllerTest.exe bin/
           # DLL nécessaires (SDL2, libusb, runtime UCRT64)
           ldd bin/VisualControllerTest.exe | grep -i ucrt64 | awk '{print $3}' | xargs -I{} cp {} bin/
+      - name: Build GTS (PC)
+        run: |
+          cmake -S gts-pc -B gts-pc/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build gts-pc/build
+          cp gts-pc/build/GTS.exe bin/
+          cp gts-pc/LICENSE bin/LICENSE-GTS.txt
+          ldd bin/GTS.exe | grep -i ucrt64 | awk '{print $3}' | xargs -I{} cp -n {} bin/
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -70,6 +77,9 @@ jobs:
           cmake --build vct-pc/build -j
           (cd vct-pc/build && ctest --output-on-failure)
           mkdir -p bin && cp vct-pc/build/VisualControllerTest bin/
+          cmake -S gts-pc -B gts-pc/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build gts-pc/build -j
+          cp gts-pc/build/GTS bin/ && cp gts-pc/LICENSE bin/LICENSE-GTS.txt
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -139,7 +149,7 @@ jobs:
           cp -r artifacts/PhobGCCTool-windows pkg/win/PhobGCCTool
           (cd pkg/win && zip -qr "../../rel/PhobGCCTool-windows-$V.zip" PhobGCCTool)
           cp -r artifacts/PhobGCCTool-linux pkg/linux/PhobGCCTool
-          chmod +x pkg/linux/PhobGCCTool/PhobGCCTool pkg/linux/PhobGCCTool/_internal/bin/VisualControllerTest || true
+          chmod +x pkg/linux/PhobGCCTool/PhobGCCTool pkg/linux/PhobGCCTool/_internal/bin/VisualControllerTest pkg/linux/PhobGCCTool/_internal/bin/GTS || true
           tar -C pkg/linux -czf "rel/PhobGCCTool-linux-$V.tar.gz" PhobGCCTool
           ls -la rel
       - name: Publier

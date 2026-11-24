@@ -43,7 +43,30 @@ typedef float    f32;
 #define PAD_BUTTON_Y      0x0800
 #define PAD_BUTTON_START  0x1000
 
+#define PAD_CHANMAX 4
+#define PAD_ERR_NONE 0
+#define PAD_ERR_NO_CONTROLLER -1
+#define PAD_MOTOR_STOP 0
+#define PAD_MOTOR_RUMBLE 1
+#define PAD_MOTOR_STOP_HARD 2
+
+typedef struct _padstatus {
+    u16 button;
+    s8 stickX, stickY;
+    s8 substickX, substickY;
+    u8 triggerL, triggerR;
+    u8 analogA, analogB;
+    s8 err;
+} PADStatus;
+
+/* Called after every new controller report (libogc: on every SI poll). */
+typedef void (*sampling_callback)(void);
+sampling_callback PAD_SetSamplingCallback(sampling_callback cb);
+/* Origin = position reported when the controller was first seen on the port. */
+u32 PAD_GetOrigin(PADStatus *origin);
+
 u32 PAD_Init(void);
+/* Returns the bitmask of connected ports (bit n = port n), like libogc. */
 u32 PAD_ScanPads(void);
 u16 PAD_ButtonsHeld(int pad);
 u16 PAD_ButtonsDown(int pad);

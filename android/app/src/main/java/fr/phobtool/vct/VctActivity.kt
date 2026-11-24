@@ -5,20 +5,21 @@ import android.os.Process
 import fr.phobtool.usb.GcAdapter
 import org.libsdl.app.SDLActivity
 
-/** Pont JNI vers la couche PAD_* du portage (vct-pc/src/pad_pc.c, vct_jni.c). */
+/** Pont JNI vers la couche PAD_* partagée (vct-pc/src/pad_pc.c, vct_jni.c). */
 object VctBridge {
     /** rapport brut de 37 octets (ou null si l'adaptateur a disparu) ; renvoie le masque de rumble */
     @JvmStatic external fun nativeReport(data: ByteArray?): Int
 }
 
 /**
- * Visual Controller Test (SDL2) dans un processus séparé (":vct") : SDL repart d'un état
- * propre à chaque lancement, et ce processus ouvre lui-même l'adaptateur pendant la partie.
+ * Programme SDL2 (VCT ou GTS) lancé dans son propre processus : SDL repart d'un état propre
+ * à chaque lancement, et ce processus ouvre lui-même l'adaptateur pendant la partie.
  */
-class VctActivity : SDLActivity() {
+abstract class SdlToolActivity : SDLActivity() {
     private var adapter: GcAdapter? = null
+    protected abstract val nativeLib: String
 
-    override fun getLibraries(): Array<String> = arrayOf("SDL2", "vct")
+    override fun getLibraries(): Array<String> = arrayOf("SDL2", nativeLib)
     override fun getArguments(): Array<String> = arrayOf("--scale", "1")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,7 +38,17 @@ class VctActivity : SDLActivity() {
         adapter?.stop()
         adapter = null
         super.onDestroy()
-        // l'état statique de SDL ne se réinitialise pas : on termine le processus ":vct"
+        // l'état statique de SDL ne se réinitialise pas : on termine le processus
         Process.killProcess(Process.myPid())
     }
+}
+
+/** Visual Controller Test (processus ":vct"). */
+class VctActivity : SdlToolActivity() {
+    override val nativeLib = "vct"
+}
+
+/** GTS - GCC Test Suite (processus ":gts"). */
+class GtsActivity : SdlToolActivity() {
+    override val nativeLib = "gts"
 }

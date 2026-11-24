@@ -72,7 +72,7 @@ class MainActivity : Activity() {
             "Firmware" to firmware,
             "Test / calibration" to TestPage(this),
             "Snapback" to SnapbackPage(this),
-            "Visual Controller Test" to VctPage(this) { adapter.stop() },
+            "VCT / GTS" to VctPage(this) { adapter.stop() },
             "Aide" to HelpPage(this) { on -> demo = on; demoT0 = SystemClock.uptimeMillis(); demoSeq = null },
         )
 

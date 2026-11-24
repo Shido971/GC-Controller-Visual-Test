@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_firmware_tab(), "1 · Firmware")
         self.tabs.addTab(self._build_calibration_tab(), "2 · Calibration / test")
         self.tabs.addTab(self._build_snapback_tab(), "3 · Snapback")
-        self.tabs.addTab(self._build_vct_tab(), "4 · Visual Controller Test")
+        self.tabs.addTab(self._build_vct_tab(), "4 · VCT / GTS")
         self.tabs.addTab(self._build_help_tab(), "Aide")
         self.setCentralWidget(self.tabs)
 
@@ -774,10 +774,12 @@ class MainWindow(QMainWindow):
         w = QWidget()
         lay = QVBoxLayout(w)
         intro = QLabel(
-            "Portage PC natif de <b>Visual Controller Test</b> (Mr. Reaper / Zarithya). "
-            "Le <code>main.c</code> Wii d'origine est recompilé sans modification avec une couche "
-            "de compatibilité SDL2 + libusb qui lit l'<b>adaptateur GameCube officiel</b> (WUP-028). "
-            "Quitter : Start+B+X, Échap ou fermer la fenêtre. F11 : plein écran.")
+            "Portages PC natifs de <b>Visual Controller Test</b> (Mr. Reaper / Zarithya) et de <b>GTS</b> "
+            "(GCC Test Suite, greenwave-1 – l'alternative libre à SmashScope). Les sources d'origine sont "
+            "recompilées sans modification avec une couche SDL2 + libusb qui lit l'<b>adaptateur GameCube "
+            "officiel</b> (WUP-028) ; GTS reçoit chaque rapport de l'adaptateur pour ses oscilloscopes.<br>"
+            "Quitter : Start+B+X (VCT), maintenir Start dans le menu (GTS), Échap ou fermer la fenêtre. "
+            "F11 : plein écran. GTS est distribué sous licence GPL-3.0.")
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
@@ -788,7 +790,11 @@ class MainWindow(QMainWindow):
         self.vct_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.tool_status = QLabel("—")
         self.tool_status.setWordWrap(True)
-        sl.addRow("Exécutable :", self.vct_status)
+        self.gts_status = QLabel("—")
+        self.gts_status.setWordWrap(True)
+        self.gts_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        sl.addRow("VCT :", self.vct_status)
+        sl.addRow("GTS :", self.gts_status)
         sl.addRow("Outils :", self.tool_status)
         lay.addWidget(st)
 
@@ -803,9 +809,15 @@ class MainWindow(QMainWindow):
         self.vct_scale.setPrefix("échelle ×")
         self.vct_sdl = QCheckBox("Autres manettes si l'adaptateur est absent")
         self.vct_sdl.setChecked(self.settings.value("vct_sdl", True, type=bool))
-        self.vct_launch = QPushButton("▶ Lancer Visual Controller Test")
+        self.vct_launch = QPushButton("▶ Visual Controller Test")
         self.vct_launch.setStyleSheet("font-weight: bold; padding: 6px 14px;")
-        self.vct_launch.clicked.connect(self.launch_vct)
+        self.vct_launch.clicked.connect(lambda: self.launch_tool("vct"))
+        self.gts_screen = QComboBox()
+        for label, key in vct.GTS_SCREENS:
+            self.gts_screen.addItem(label, key)
+        self.gts_launch = QPushButton("▶ GTS")
+        self.gts_launch.setStyleSheet("font-weight: bold; padding: 6px 14px;")
+        self.gts_launch.clicked.connect(lambda: self.launch_tool("gts"))
         self.vct_kill = QPushButton("Fermer")
         self.vct_kill.setEnabled(False)
         self.vct_kill.clicked.connect(lambda: self.vct_proc and self.vct_proc.terminate())
@@ -814,6 +826,8 @@ class MainWindow(QMainWindow):
         ol.addWidget(self.vct_sdl)
         ol.addStretch(1)
         ol.addWidget(self.vct_launch)
+        ol.addWidget(self.gts_screen)
+        ol.addWidget(self.gts_launch)
         ol.addWidget(self.vct_kill)
         lay.addWidget(opts)
 
@@ -851,15 +865,18 @@ class MainWindow(QMainWindow):
         return w
 
     def _refresh_vct_status(self):
+        missing = ("<span style='color:#ffb347'>Pas encore compilé</span> — "
+                   "clique sur « Compiler / recompiler ».")
         exe = vct.find_vct_exe(self.vct_exe_override.text().strip() or None)
-        if exe:
-            self.vct_status.setText(f"<span style='color:#5fd38d'>✔</span> {exe}")
-        else:
-            self.vct_status.setText("<span style='color:#ffb347'>Pas encore compilé</span> — "
-                                    "clique sur « Compiler / recompiler ».")
+        self.vct_status.setText(f"<span style='color:#5fd38d'>✔</span> {exe}" if exe else missing)
+        gexe = vct.find_gts_exe()
+        self.gts_status.setText(f"<span style='color:#5fd38d'>✔</span> {gexe}" if gexe else missing)
         ok, msg = vct.toolchain_status()
         self.tool_status.setText(msg)
-        self.vct_launch.setEnabled(exe is not None and self.vct_proc is None)
+        idle = self.vct_proc is None
+        self.vct_launch.setEnabled(exe is not None and idle)
+        self.gts_launch.setEnabled(gexe is not None and idle)
+        self.gts_screen.setEnabled(idle)
 
     def _vct_log(self, text: str):
         self.vct_log.appendPlainText(text.rstrip("\n"))
@@ -877,6 +894,8 @@ class MainWindow(QMainWindow):
                                   self.vct_ref.text().strip() or vct.DEFAULT_UPSTREAM_REF,
                                   self.vct_local.text().strip() or None),
             vct.build_command(),
+            vct.gts_configure_command(),
+            vct.gts_build_command(),
         ]
         self.vct_build.setEnabled(False)
         self.vct_log.clear()
@@ -908,7 +927,13 @@ class MainWindow(QMainWindow):
         proc.start(cmd[0], cmd[1:])
 
     def launch_vct(self):
-        exe = vct.find_vct_exe(self.vct_exe_override.text().strip() or None)
+        self.launch_tool("vct")
+
+    def launch_tool(self, tool: str):
+        if tool == "gts":
+            exe, name = vct.find_gts_exe(), "GTS"
+        else:
+            exe, name = vct.find_vct_exe(self.vct_exe_override.text().strip() or None), "Visual Controller Test"
         if not exe:
             self._refresh_vct_status()
             return
@@ -918,8 +943,11 @@ class MainWindow(QMainWindow):
         self.settings.setValue("vct_exe", self.vct_exe_override.text().strip())
         # un seul programme peut réclamer l'adaptateur : on le libère
         self.reader.stop()
-        self.adapter_label.setText("Adaptateur : prêté à Visual Controller Test")
+        self.adapter_label.setText(f"Adaptateur : prêté à {name}")
         args = vct.launch_args(self.vct_full.isChecked(), self.vct_scale.value(), self.vct_sdl.isChecked())
+        if tool == "gts" and self.gts_screen.currentData():
+            args += ["--menu", self.gts_screen.currentData()]
+        self._tool_name = name
         self._vct_log(f"$ {exe} {' '.join(args)}")
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.MergedChannels)
@@ -930,11 +958,12 @@ class MainWindow(QMainWindow):
         proc.errorOccurred.connect(lambda e: self._vct_log(f"✘ Lancement impossible ({e})"))
         self.vct_proc = proc
         self.vct_launch.setEnabled(False)
+        self.gts_launch.setEnabled(False)
         self.vct_kill.setEnabled(True)
         proc.start(str(exe), args)
 
     def _vct_finished(self, code, _status):
-        self._vct_log(f"Visual Controller Test fermé (code {code}).")
+        self._vct_log(f"{getattr(self, '_tool_name', 'Programme')} fermé (code {code}).")
         self.vct_proc = None
         self.vct_kill.setEnabled(False)
         self._refresh_vct_status()

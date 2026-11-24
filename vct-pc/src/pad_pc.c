@@ -30,6 +30,10 @@
 /* Shared state                                                        */
 /* ------------------------------------------------------------------ */
 static gc_port_state g_live[4];      /* written by the USB thread  */
+static gc_port_state g_origin[4];    /* first report after connection */
+static int g_was_connected[4];
+static SDL_SpinLock g_scan_lock = 0;  /* PAD_ScanPads may run on two threads (GTS) */
+static volatile sampling_callback g_sampling_cb = NULL;
 static gc_port_state g_snap[4];      /* snapshot used by PAD_*     */
 static u16 g_prev_held[4];
 static u16 g_down[4];
@@ -110,6 +114,9 @@ static int SDLCALL adapter_thread(void *unused)
                 LOCK();
                 memcpy(g_live, parsed, sizeof g_live);
                 UNLOCK();
+                sampling_callback cb = g_sampling_cb;
+                if (cb)
+                    cb();
             }
         }
 
@@ -152,7 +159,47 @@ int vct_bridge_report(const unsigned char *data, int len)
         mask |= (g_rumble_want[i] ? 1 : 0) << i;
     UNLOCK();
     SDL_AtomicSet(&g_adapter_ok, ok);
+    sampling_callback cb = g_sampling_cb;
+    if (cb)
+        cb();
     return mask;
+}
+
+sampling_callback PAD_SetSamplingCallback(sampling_callback cb)
+{
+    sampling_callback old = g_sampling_cb;
+    g_sampling_cb = cb;
+    return old;
+}
+
+/* Lets the host loop drive the callback when no adapter thread does (demo, SDL pads). */
+void vct_pad_frame_tick(void)
+{
+    sampling_callback cb = g_sampling_cb;
+    if (cb && !SDL_AtomicGet(&g_adapter_ok))
+        cb();
+}
+
+u32 PAD_GetOrigin(PADStatus *origin)
+{
+    if (!origin)
+        return 0;
+    for (int i = 0; i < 4; i++) {
+        PADStatus *o = &origin[i];
+        memset(o, 0, sizeof *o);
+        if (!g_snap[i].connected) {
+            o->err = PAD_ERR_NO_CONTROLLER;
+            continue;
+        }
+        o->stickX = gc_axis_to_s8(g_origin[i].stick_x);
+        o->stickY = gc_axis_to_s8(g_origin[i].stick_y);
+        o->substickX = gc_axis_to_s8(g_origin[i].cstick_x);
+        o->substickY = gc_axis_to_s8(g_origin[i].cstick_y);
+        o->triggerL = g_origin[i].trig_l;
+        o->triggerR = g_origin[i].trig_r;
+        o->err = PAD_ERR_NONE;
+    }
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -272,6 +319,7 @@ u32 PAD_Init(void)
 
 u32 PAD_ScanPads(void)
 {
+    SDL_AtomicLock(&g_scan_lock);
     gc_port_state cur[4];
     LOCK();
     memcpy(cur, g_live, sizeof cur);
@@ -285,13 +333,20 @@ u32 PAD_ScanPads(void)
     if (g_vct_opts.demo)
         demo_read(&cur[0]);
 
+    u32 mask = 0;
     for (int i = 0; i < 4; i++) {
+        if (cur[i].connected && !g_was_connected[i])
+            g_origin[i] = cur[i];
+        g_was_connected[i] = cur[i].connected;
         g_snap[i] = cur[i];
         u16 held = cur[i].connected ? cur[i].buttons : 0;
         g_down[i] = held & (u16)~g_prev_held[i];
         g_prev_held[i] = held;
+        if (cur[i].connected)
+            mask |= 1u << i;
     }
-    return 1;
+    SDL_AtomicUnlock(&g_scan_lock);
+    return mask;
 }
 
 static int valid(int p) { return p >= 0 && p < 4 && g_snap[p].connected; }
@@ -310,7 +365,7 @@ void PAD_ControlMotor(int p, u32 cmd)
 {
     if (p < 0 || p > 3)
         return;
-    u8 v = cmd ? 1 : 0;
+    u8 v = (cmd == PAD_MOTOR_RUMBLE) ? 1 : 0;   /* STOP and STOP_HARD both stop */
     if (g_vct_opts.use_sdl_gamepads && g_sdl_pads[p] && !SDL_AtomicGet(&g_adapter_ok))
         SDL_GameControllerRumble(g_sdl_pads[p], v ? 0xC000 : 0, v ? 0xC000 : 0, v ? 100 : 0);
     LOCK();

@@ -6,3 +6,4 @@ local.properties
 app/src/main/cpp/SDL/
 app/src/main/cpp/vct-upstream/
 app/src/main/java/org/libsdl/
+app/src/main/cpp/gts-upstream/

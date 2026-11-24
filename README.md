@@ -12,7 +12,8 @@ Application graphique (Windows / Linux / macOS) pour :
 3. **Tester le snapback** comme l'oscilloscope de [GTS](https://github.com/greenwave-1/GTS) : courbe du lâcher,
    rebond côté opposé comparé à la zone neutre de Melee (±22), bilan par direction.
 4. **Compiler et lancer Visual Controller Test en natif sur PC**
-5. **Tout ça aussi sur Android** (dossier `android/`, voir plus bas), avec l'adaptateur officiel (WUP-028).
+5. **Lancer GTS (GCC Test Suite) en natif** sur PC et Android : l'alternative libre à SmashScope
+6. **Tout ça aussi sur Android** (dossier `android/`, voir plus bas), avec l'adaptateur officiel (WUP-028).
 
 ```
 phobtool/            application Python (PySide6)
@@ -103,6 +104,26 @@ Le bouton « Compiler / recompiler » de l'appli fait la même chose. Le champ �
 une autre version des sources Wii (`main` pour la plus récente).
 
 Options : `--fullscreen`, `--scale N`, `--no-sdl-pads`, `--demo`. Quitter : Start+B+X, Échap, ou fermer la fenêtre. F11 : plein écran.
+
+## GTS – GCC Test Suite sur PC / Android
+
+`gts-pc/` compile les sources d'origine de [GTS](https://github.com/greenwave-1/GTS) (version GameCube), **sans les
+modifier**, sur une couche de compatibilité libogc → SDL2 :
+- `src/gx_sdl.c` émule la partie de l'API graphique GX qu'utilise GTS : primitives, textures, test de profondeur,
+  découpage et décalage d'écran. `cmake/embed_textures.cmake` remplace l'outil de textures de devkitPro.
+- Le rappel d'échantillonnage de GTS (`PAD_SetSamplingCallback`) est appelé à **chaque rapport de l'adaptateur**,
+  donc ses oscilloscopes reçoivent toutes les mesures (125 Hz d'origine, jusqu'à 1000 Hz si l'adaptateur est overclocké).
+  Sur console, GTS lit la manette à une fréquence encore plus élevée.
+- Les enregistrements exportés vont dans le dossier de données de l'utilisateur (`…/PhobGCCTool/GTS`).
+
+```bash
+cmake -S gts-pc -B gts-pc/build && cmake --build gts-pc/build
+gts-pc/build/GTS --menu oscilloscope      # ouvre directement un écran
+```
+
+SmashScope n'est pas open source : il ne peut pas être recompilé. GTS en est l'alternative libre.
+**Licence** : GTS est sous GPL-3.0 (`gts-pc/LICENSE`). Le portage `gts-pc/` et les fichiers de `vct-pc/` liés dans le
+binaire GTS sont distribués sous la même licence.
 
 ## Appli Android (APK)
 

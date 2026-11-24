@@ -5,6 +5,7 @@ import android.content.Intent
 import android.view.View
 import android.widget.CheckBox
 import android.widget.ScrollView
+import fr.phobtool.vct.GtsActivity
 import fr.phobtool.vct.VctActivity
 
 class VctPage(private val act: Activity, private val beforeLaunch: () -> Unit) : Page {
@@ -19,9 +20,21 @@ class VctPage(private val act: Activity, private val beforeLaunch: () -> Unit) :
             beforeLaunch()
             act.startActivity(Intent(act, VctActivity::class.java))
         }, top = 12)
-        c.add(act.text("Le jeu s'ouvre en paysage. L'adaptateur lui est prêté pendant la partie puis rendu à l'appli.",
-            12f, color = C.DIM), top = 8)
         root.add(c)
+        root.gap()
+        val g = act.card("GTS – GCC Test Suite")
+        g.add(act.html("Portage natif de <b>GTS</b> (greenwave-1), l'alternative libre à SmashScope : test manette, " +
+            "oscilloscopes (snapback, dashback…), gâchettes, visualiseur de coordonnées Melee, tracé 2D, " +
+            "chronométrage des boutons et visualiseur de gate. Mêmes écrans que sur console.<br><br>" +
+            "Quitter : maintenir <b>Start</b> dans le menu principal, ou le bouton retour. " +
+            "La précision des oscilloscopes dépend de la fréquence de l'adaptateur.", 14f))
+        g.add(act.button("▶  Lancer GTS", primary = true) {
+            beforeLaunch()
+            act.startActivity(Intent(act, GtsActivity::class.java))
+        }, top = 12)
+        root.add(g)
+        root.add(act.text("Le programme s'ouvre en paysage. L'adaptateur lui est prêté pendant l'utilisation puis rendu à l'appli. " +
+            "GTS est distribué sous licence GPL-3.0.", 12f, color = C.DIM), top = 8)
     }
 }
 
