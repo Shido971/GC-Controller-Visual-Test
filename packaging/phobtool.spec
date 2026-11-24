@@ -26,6 +26,9 @@ a = Analysis(
     excludes=["tkinter"],
 )
 pyz = PYZ(a.pure)
+is_win = os.name == "nt"
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PhobGCCTool",
-          console=False, icon=None)
-coll = COLLECT(exe, a.binaries, a.datas, name="PhobGCCTool")
+          console=False, upx=False,
+          icon=str(root / "packaging" / "phobtool.ico") if is_win else None,
+          version=str(root / "packaging" / "version_info.txt") if is_win else None)
+coll = COLLECT(exe, a.binaries, a.datas, upx=False, name="PhobGCCTool")
