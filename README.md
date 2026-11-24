@@ -1,5 +1,8 @@
 # PhobGCC Tool
 
+**Télécharger :** onglet [Releases](../../releases) → *Dernière version* (exe Windows, APK Android, Linux).
+Elle est remise à jour automatiquement à chaque modification du code.
+
 Application graphique (Windows / Linux / macOS) pour :
 
 1. **Mettre à jour une PhobGCC** avec la dernière release de

@@ -3,9 +3,9 @@
 ## Téléchargements
 | Fichier | Pour |
 |---|---|
-| `PhobGCCTool-windows-vX.Y.Z.zip` | Windows 10/11 : décompresse, puis lance `PhobGCCTool.exe` |
-| `PhobGCCTool-android-vX.Y.Z.apk` | Android 7+ : ouvre le fichier sur le téléphone et autorise l'installation |
-| `PhobGCCTool-linux-vX.Y.Z.tar.gz` | Linux x86_64 : extrais, puis lance `PhobGCCTool/PhobGCCTool` |
+| `PhobGCCTool-windows-….zip` | Windows 10/11 : décompresse, puis lance `PhobGCCTool.exe` |
+| `PhobGCCTool-android-….apk` | Android 7+ : ouvre le fichier sur le téléphone et autorise l'installation |
+| `PhobGCCTool-linux-….tar.gz` | Linux x86_64 : extrais, puis lance `PhobGCCTool/PhobGCCTool` |
 
 ## Fonctions
 - Mise à jour du firmware PhobGCC depuis les releases officielles (SHA-256 vérifié)

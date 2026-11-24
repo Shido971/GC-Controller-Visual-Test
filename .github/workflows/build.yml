@@ -3,6 +3,11 @@ name: build
 on:
   push:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier (ex. v0.2.0). Vide = simple build."
+        required: false
+        default: ""
 
 jobs:
   windows:
@@ -89,21 +94,38 @@ jobs:
           name: PhobGCCTool-android
           path: android/app/build/outputs/apk/release/app-release.apk
 
-  # Publie une release quand un tag v* est poussé (ex. git tag v0.1.0 && git push origin v0.1.0)
+  # Publication des fichiers dans les Releases GitHub :
+  #  - chaque push sur main met à jour la release « latest » (Dernière version)
+  #  - un tag v* poussé, ou un lancement manuel avec une version, crée une release numérotée
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
+      (github.event_name == 'workflow_dispatch' && inputs.version != '')
     needs: [windows, linux, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ github.ref }}-${{ inputs.version }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: Nom de la release
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"; echo "rolling=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"; echo "rolling=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"; echo "rolling=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Préparer les fichiers
         run: |
-          V="${GITHUB_REF_NAME}"
+          V="${{ steps.v.outputs.tag }}"
           mkdir -p rel pkg/win pkg/linux
           cp artifacts/PhobGCCTool-android/app-release.apk "rel/PhobGCCTool-android-$V.apk"
           cp -r artifacts/PhobGCCTool-windows pkg/win/PhobGCCTool
@@ -112,10 +134,17 @@ jobs:
           chmod +x pkg/linux/PhobGCCTool/PhobGCCTool pkg/linux/PhobGCCTool/_internal/bin/VisualControllerTest || true
           tar -C pkg/linux -czf "rel/PhobGCCTool-linux-$V.tar.gz" PhobGCCTool
           ls -la rel
-      - name: Publier la release
+      - name: Publier
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" rel/* \
-            --title "PhobGCC Tool $GITHUB_REF_NAME" \
-            --notes-file .github/release-notes.md
+          TAG="${{ steps.v.outputs.tag }}"
+          if [ "${{ steps.v.outputs.rolling }}" = "true" ]; then
+            gh release delete latest --cleanup-tag --yes || true
+            gh release create latest rel/* --target "$GITHUB_SHA" --prerelease \
+              --title "Dernière version (build du $(date -u +%Y-%m-%d), ${GITHUB_SHA::7})" \
+              --notes-file .github/release-notes.md
+          else
+            gh release create "$TAG" rel/* --target "$GITHUB_SHA" \
+              --title "PhobGCC Tool $TAG" --notes-file .github/release-notes.md
+          fi
