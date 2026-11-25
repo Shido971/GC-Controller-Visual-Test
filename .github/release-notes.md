@@ -12,6 +12,7 @@
 - Calibration guidée en direct via l'adaptateur GameCube
 - Test de snapback (méthode GTS)
 - Visual Controller Test en natif (PC et Android)
+- Mise à jour de l'appli directement depuis l'appli (PC et Android, onglet Aide)
 - GTS (GCC Test Suite) en natif (PC et Android) : test manette, oscilloscopes, gâchettes, coordonnées Melee, gate…
 
 ## À savoir

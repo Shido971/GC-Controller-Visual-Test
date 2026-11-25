@@ -286,6 +286,32 @@ def test_snapback_low_rate_adapter():
     assert 124 < m.hz < 126
 
 
+
+def test_updater_version_json():
+    from phobtool import updater
+    d = {"build": 12, "sha": "abc1234def", "date": "2026-11-25",
+         "assets": {"windows": {"name": "w.zip", "url": "https://x/w.zip"}, "linux": {"name": "l.tgz", "url": "u"}}}
+    i = updater.parse_version_json(d, "windows")
+    assert i.build == 12 and i.asset_name == "w.zip" and "abc1234" in i.label
+    assert updater.parse_version_json(d, None).asset_url is None
+    s = updater._windows_script(updater.Path("C:/t/new/PhobGCCTool"), updater.Path("C:/App"), "PhobGCCTool.exe", 4242)
+    assert '" 4242 "' in s and "/MIR" in s and 'start "" "C:' in s
+
+
+def test_updater_rejects_bad_zip(tmp=None):
+    import tempfile, zipfile
+    from phobtool import updater
+    d = updater.Path(tempfile.mkdtemp())
+    z = d / "evil.zip"
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("../evil.txt", "x")
+    try:
+        updater.extract(z)
+    except RuntimeError:
+        return
+    raise AssertionError("archive dangereuse acceptée")
+
+
 if __name__ == "__main__":
     import tempfile
     for name, fn in list(globals().items()):

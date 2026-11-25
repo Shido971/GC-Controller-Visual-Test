@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var adapter: GcAdapter
     private lateinit var pages: List<Pair<String, Page>>
     private lateinit var firmware: FirmwarePage
+    private lateinit var updater: fr.phobtool.update.Updater
     private var current = 0
     private val tabs = ArrayList<TextView>()
     private lateinit var content: FrameLayout
@@ -68,12 +69,13 @@ class MainActivity : Activity() {
         window.navigationBarColor = C.BG
         adapter = GcAdapter(this)
         firmware = FirmwarePage(this)
+        updater = fr.phobtool.update.Updater(this)
         pages = listOf(
             "Firmware" to firmware,
             "Test / calibration" to TestPage(this),
             "Snapback" to SnapbackPage(this),
             "VCT / GTS" to VctPage(this) { adapter.stop() },
-            "Aide" to HelpPage(this) { on -> demo = on; demoT0 = SystemClock.uptimeMillis(); demoSeq = null },
+            "Aide" to HelpPage(this, updater) { on -> demo = on; demoT0 = SystemClock.uptimeMillis(); demoSeq = null },
         )
 
         val root = vbox().apply { setBackgroundColor(C.BG) }
@@ -112,6 +114,13 @@ class MainActivity : Activity() {
         adapter.addListener(listener)
         select(intent?.getIntExtra("tab", 1) ?: 1)
         if (intent?.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) onUsbIntent(intent)
+        if (savedInstanceState == null && fr.phobtool.update.Updater.autoCheck(this))
+            ui.postDelayed({ updater.check(manual = false) }, 2500)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updater.onResume()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -160,6 +169,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         adapter.removeListener(listener)
+        updater.release()
         super.onDestroy()
     }
 

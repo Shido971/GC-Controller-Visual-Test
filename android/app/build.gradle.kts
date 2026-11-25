@@ -12,8 +12,10 @@ android {
         applicationId = "fr.phobtool"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // numéro de build de la CI : sert à détecter les mises à jour
+        val build = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
+        versionCode = build
+        versionName = "0.1.$build"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
@@ -31,11 +33,22 @@ android {
         }
     }
 
+    // Clé de signature fixe (secrets GitHub) : indispensable pour qu'Android accepte les mises à jour.
+    // Sans elle (build local), on retombe sur la clé de debug.
+    val ksFile = System.getenv("ANDROID_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (ksFile != null) create("release") {
+            storeFile = ksFile
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "phobtool"
+            keyPassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // signé avec la clé de debug : installable directement (sideload), pas pour le Play Store
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (ksFile != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 

@@ -125,6 +125,19 @@ SmashScope n'est pas open source : il ne peut pas être recompilé. GTS en est l
 **Licence** : GTS est sous GPL-3.0 (`gts-pc/LICENSE`). Le portage `gts-pc/` et les fichiers de `vct-pc/` liés dans le
 binaire GTS sont distribués sous la même licence.
 
+## Mises à jour de l'appli
+
+Le PC et Android vérifient au démarrage s'il existe un build plus récent dans la release
+[`latest`](https://github.com/Shido971/GC-Controller-Visual-Test/releases/tag/latest) (fichier `version.json`,
+numéro de build de la CI). On peut aussi vérifier à la main dans l'onglet **Aide**.
+- **Windows / Linux** : l'archive est téléchargée, puis l'appli se ferme, remplace ses fichiers et redémarre.
+- **Android** : l'APK est téléchargé et installé via l'installateur d'Android. Il faut autoriser une fois l'appli à
+  « installer des applis inconnues ».
+
+**Signature Android** : pour qu'Android accepte une mise à jour, tous les APK doivent être signés avec la même clé.
+La CI utilise les secrets du dépôt `ANDROID_KEYSTORE_B64` (keystore encodé en base64) et `ANDROID_KEYSTORE_PASSWORD`
+(alias `phobtool`). Sans eux, l'APK est signé avec une clé temporaire différente à chaque build.
+
 ## Appli Android (APK)
 
 Le dossier `android/` contient une appli native en Kotlin, sans dépendance AndroidX, qui fait tout ce que fait la version PC :

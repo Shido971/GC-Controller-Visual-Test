@@ -38,10 +38,24 @@ class VctPage(private val act: Activity, private val beforeLaunch: () -> Unit) :
     }
 }
 
-class HelpPage(act: Activity, onDemo: (Boolean) -> Unit) : Page {
+class HelpPage(act: Activity, updater: fr.phobtool.update.Updater, onDemo: (Boolean) -> Unit) : Page {
     override val view: View = ScrollView(act).apply {
         val root = act.vbox(12)
         addView(root)
+        val u = act.card("Mises à jour de PhobGCC Tool")
+        u.add(act.text("Version installée : ${fr.phobtool.update.Updater.currentLabel(act)}"))
+        val st = act.text("", 13f, color = C.DIM)
+        u.add(st, top = 4)
+        updater.onStatus = { st.text = it }
+        u.add(CheckBox(act).apply {
+            text = "Vérifier au démarrage"
+            setTextColor(C.TEXT)
+            isChecked = fr.phobtool.update.Updater.autoCheck(act)
+            setOnCheckedChangeListener { _, on -> fr.phobtool.update.Updater.setAutoCheck(act, on) }
+        })
+        u.add(act.button("Rechercher une mise à jour", primary = true) { updater.check(manual = true) }, top = 4)
+        root.add(u)
+        root.gap()
         val c = act.card()
         c.add(act.html(HELP, 14f))
         root.add(c)

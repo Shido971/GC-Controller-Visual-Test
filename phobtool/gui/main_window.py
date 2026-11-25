@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from .. import APP_NAME, __version__, flasher, releases, snapback, vct
+from .. import APP_NAME, flasher, releases, snapback, updater, vct
 from ..adapter import AdapterReader, PadState
 from ..calibration import ADJUST, DONE, MEASURE, CalibrationTracker, step_notch
 from ..paths import firmware_cache_dir, vct_build_dir
@@ -44,6 +44,9 @@ class Bus(QObject):
     progress = Signal(int, int)
     stage = Signal(str)
     flash_done = Signal(bool, str)
+    update_checked = Signal(object, str, bool)   # info|None, erreur, manuel
+    update_progress = Signal(int, int)
+    update_ready = Signal(object, str)           # dossier extrait|None, erreur
 
 
 def _mono() -> QFont:
@@ -55,7 +58,7 @@ def _mono() -> QFont:
 class MainWindow(QMainWindow):
     def __init__(self, demo_pad: bool = False):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} {__version__}")
+        self.setWindowTitle(f"{APP_NAME} {updater.current_label()}")
         self.resize(1080, 760)
         self.settings = QSettings("PhobGCCTool", "PhobGCCTool")
         self.bus = Bus()
@@ -91,6 +94,11 @@ class MainWindow(QMainWindow):
         self.bus.progress.connect(self._on_progress)
         self.bus.stage.connect(self._on_stage)
         self.bus.flash_done.connect(self._on_flash_done)
+        self.bus.update_checked.connect(self._on_update_checked)
+        self.bus.update_progress.connect(self._on_update_progress)
+        self.bus.update_ready.connect(self._on_update_ready)
+        self._update_cancel = threading.Event()
+        self._update_busy = False
 
         self.reader = AdapterReader(lambda pads, status: self.bus.pads.emit(pads, status))
         if demo_pad:
@@ -102,6 +110,8 @@ class MainWindow(QMainWindow):
             self.reader.start()
 
         QTimer.singleShot(200, self.refresh_releases)
+        if self.settings.value("update/auto", True, type=bool) and not demo_pad:
+            QTimer.singleShot(2500, lambda: self.check_updates(manual=False))
         self._refresh_vct_status()
 
     # ================================================================ firmware
@@ -972,14 +982,133 @@ class MainWindow(QMainWindow):
 
     # ==================================================================== help
     def _build_help_tab(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        box = QGroupBox("Mises à jour de PhobGCC Tool")
+        bl = QVBoxLayout(box)
+        row = QHBoxLayout()
+        self.upd_label = QLabel(f"Version installée : <b>{updater.current_label()}</b>")
+        self.upd_label.setTextFormat(Qt.RichText)
+        row.addWidget(self.upd_label, 1)
+        self.upd_auto = QCheckBox("Vérifier au démarrage")
+        self.upd_auto.setChecked(self.settings.value("update/auto", True, type=bool))
+        self.upd_auto.toggled.connect(lambda on: self.settings.setValue("update/auto", on))
+        row.addWidget(self.upd_auto)
+        self.upd_btn = QPushButton("Rechercher une mise à jour")
+        self.upd_btn.clicked.connect(lambda: self.check_updates(manual=True))
+        row.addWidget(self.upd_btn)
+        bl.addLayout(row)
+        self.upd_status = QLabel("")
+        self.upd_status.setWordWrap(True)
+        self.upd_status.setOpenExternalLinks(True)
+        bl.addWidget(self.upd_status)
+        self.upd_bar = QProgressBar()
+        self.upd_bar.setVisible(False)
+        bl.addWidget(self.upd_bar)
+        lay.addWidget(box)
         tb = QTextBrowser()
         tb.setOpenExternalLinks(True)
         tb.setHtml(HELP_HTML)
-        return tb
+        lay.addWidget(tb, 1)
+        return w
+
+    # ================================================================ updates
+    def check_updates(self, manual: bool = True):
+        if self._update_busy:
+            return
+        self._update_busy = True
+        self.upd_btn.setEnabled(False)
+        self.upd_status.setText("Recherche d'une mise à jour…")
+
+        def job():
+            try:
+                self.bus.update_checked.emit(updater.check(), "", manual)
+            except Exception as e:  # réseau absent, GitHub injoignable…
+                self.bus.update_checked.emit(None, str(e), manual)
+        threading.Thread(target=job, daemon=True).start()
+
+    def _on_update_checked(self, info, err: str, manual: bool):
+        self._update_busy = False
+        self.upd_btn.setEnabled(True)
+        link = f"<a href='{updater.RELEASE_PAGE}'>page des téléchargements</a>"
+        if err:
+            self.upd_status.setText(f"Impossible de vérifier les mises à jour : {err}")
+            return
+        if info is None:
+            self.upd_status.setText("✔ PhobGCC Tool est à jour.")
+            if manual:
+                QMessageBox.information(self, "Mise à jour", "Tu as déjà la dernière version.")
+            return
+        ok, why = updater.can_self_update()
+        self.upd_status.setText(f"Nouvelle version disponible : <b>{info.label}</b> — {link}")
+        if not ok or not info.asset_url:
+            if manual or updater.is_packaged():
+                QMessageBox.information(self, "Mise à jour disponible",
+                    f"Une nouvelle version est disponible ({info.label}).\n\n"
+                    f"Installation automatique impossible : {why or 'pas de fichier pour ce système'}.")
+            return
+        r = QMessageBox.question(self, "Mise à jour disponible",
+            f"Une nouvelle version de PhobGCC Tool est disponible ({info.label}).\n"
+            f"Version installée : {updater.current_label()}.\n\n"
+            "La télécharger et l'installer maintenant ? L'appli redémarrera toute seule.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if r == QMessageBox.Yes:
+            self._start_update(info)
+
+    def _start_update(self, info):
+        if self._flash_thread and self._flash_thread.is_alive():
+            QMessageBox.warning(self, "Mise à jour", "Attends la fin de la mise à jour du firmware.")
+            return
+        self._update_busy = True
+        self._update_cancel.clear()
+        self.upd_btn.setEnabled(False)
+        self.upd_bar.setVisible(True)
+        self.upd_bar.setValue(0)
+        self.upd_status.setText(f"Téléchargement de {info.asset_name}…")
+        self.tabs.setCurrentIndex(self.tabs.count() - 1)
+
+        def job():
+            try:
+                arc = updater.download(info, lambda d, t: self.bus.update_progress.emit(d, t),
+                                       self._update_cancel.is_set)
+                self.bus.update_progress.emit(-1, 0)
+                self.bus.update_ready.emit(updater.extract(arc), "")
+            except Exception as e:
+                self.bus.update_ready.emit(None, str(e))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _on_update_progress(self, done: int, total: int):
+        if done < 0:
+            self.upd_bar.setRange(0, 0)
+            self.upd_status.setText("Préparation des fichiers…")
+            return
+        if total > 0:
+            self.upd_bar.setRange(0, 1000)
+            self.upd_bar.setValue(int(done * 1000 / total))
+        self.upd_status.setText(f"Téléchargement… {done / 1e6:.1f} / {total / 1e6:.1f} Mo")
+
+    def _on_update_ready(self, root, err: str):
+        self._update_busy = False
+        self.upd_btn.setEnabled(True)
+        self.upd_bar.setVisible(False)
+        self.upd_bar.setRange(0, 1000)
+        if root is None:
+            self.upd_status.setText(f"Échec de la mise à jour : {err}")
+            QMessageBox.warning(self, "Mise à jour", f"La mise à jour a échoué :\n{err}")
+            return
+        try:
+            updater.launch_installer(root)
+        except Exception as e:
+            self.upd_status.setText(f"Échec de la mise à jour : {e}")
+            return
+        self.upd_status.setText("Installation… PhobGCC Tool va redémarrer.")
+        self._closing_for_update = True
+        QTimer.singleShot(300, self.close)
 
     # ================================================================= closing
     def closeEvent(self, ev):
         self._cancel.set()
+        self._update_cancel.set()
         self.reader.stop()
         if self.vct_proc:
             self.vct_proc.terminate()
