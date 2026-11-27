@@ -79,15 +79,49 @@ class LogicTest {
         }
     }
 
+    private val frozenPad = PadState(true, false, emptySet(), 255, 255, 255, 255, 59, 59)
+
+    /** A+X+Y puis L/R : le firmware gèle aussitôt sa sortie 2 s, le combo complet n'apparaît jamais. */
+    private fun enterCal(tr: CalibrationTracker, sim: FirmwareSim, last: String? = null) {
+        repeat(20) { tr.feed(sim.pad(setOf("A", "X", "Y"))) }
+        if (last != null) repeat(3) { tr.feed(sim.pad(setOf("A", "X", "Y", last))) }
+        sim.start()
+        repeat(250) { tr.feed(frozenPad) }
+        repeat(5) { tr.feed(sim.pad()) }
+    }
+
     private fun startCal(stick: Char, inactive: Set<Int> = emptySet()): Pair<FirmwareSim, CalibrationTracker> {
         val sim = FirmwareSim(stick, inactive)
         val tr = CalibrationTracker(); tr.arm(stick)
-        val combo = setOf("A", "X", "Y", if (stick == 'A') "L" else "R")
-        repeat(5) { tr.feed(sim.pad(combo)) }
-        sim.start()
-        repeat(5) { tr.feed(sim.pad()) }
+        enterCal(tr, sim)
         expect(tr.state == CalState.MEASURE && tr.step == 0) { "${tr.state} ${tr.step}" }
         return sim to tr
+    }
+
+    @Test fun calibrationNeedsFreeze() {
+        val sim = FirmwareSim('C', emptySet())
+        val tr = CalibrationTracker(); tr.arm('C')
+        repeat(200) { tr.feed(sim.pad(setOf("A", "X", "Y", "R"))) }
+        expect(tr.state == CalState.ARMED && tr.error != null)
+        repeat(300) { tr.feed(PadState(true, false, emptySet(), 218, 168, 128, 128)) }
+        expect(tr.state == CalState.ARMED && tr.step == -1)
+        enterCal(tr, sim)
+        expect(tr.state == CalState.MEASURE && tr.step == 0 && tr.error == null)
+        run(sim, tr, List(44) { "A" }); expect(tr.state == CalState.DONE)
+    }
+
+    @Test fun calibrationFreezeWithoutCombo() {
+        val tr = CalibrationTracker(); tr.arm('A')
+        repeat(250) { tr.feed(frozenPad) }
+        expect(tr.state == CalState.ARMED)
+    }
+
+    @Test fun calibrationWrongStickFollowed() {
+        val sim = FirmwareSim('A', emptySet())
+        val tr = CalibrationTracker(); tr.arm('C')
+        enterCal(tr, sim, last = "L")
+        expect(tr.stick == 'A' && tr.state == CalState.MEASURE && tr.notice != null)
+        run(sim, tr, List(44) { "A" }); expect(tr.state == CalState.DONE)
     }
 
     private fun run(sim: FirmwareSim, tr: CalibrationTracker, script: List<String>) {

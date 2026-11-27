@@ -165,17 +165,28 @@ def run(sim, tr, script):
     return trace
 
 
+FROZEN_PAD = adapter.PadState(connected=True, ax=255, ay=255, cx=255, cy=255, l=59, r=59)
+
+
+def enter_calibration(tr, sim, combo_stick, hold_after=0):
+    """Comme sur la vraie manette : A+X+Y d'abord, puis L ou R. Dès que le combo est complet le firmware
+    gèle sa sortie (4 axes à 255, aucun bouton) pendant 2 s : le combo complet n'apparaît jamais."""
+    for _ in range(20):
+        tr.feed(sim.pad({"A", "X", "Y"}))
+    sim.stick = combo_stick
+    sim.start()
+    for _ in range(250):                     # 2 s à 125 Hz
+        tr.feed(FROZEN_PAD)
+    for _ in range(hold_after):
+        tr.feed(sim.pad())
+
+
 def start(stick="A", inactive=()):
     sim = FirmwareSim(stick, inactive)
     tr = cal.CalibrationTracker()
     tr.arm(stick)
-    combo = {"A", "X", "Y", "L" if stick == "A" else "R"}
-    for _ in range(5):
-        tr.feed(sim.pad(combo))
-    sim.start()
-    for _ in range(5):
-        tr.feed(sim.pad())
-    assert tr.state == cal.MEASURE and tr.step == 0
+    enter_calibration(tr, sim, stick, hold_after=5)
+    assert tr.state == cal.MEASURE and tr.step == 0, (tr.state, tr.step)
     return sim, tr
 
 
@@ -196,6 +207,70 @@ def test_full_calibration_a_stick():
 def test_full_calibration_c_stick():
     sim, tr = start("C")
     check(run(sim, tr, ["A"] * 44))
+    assert tr.state == cal.DONE
+
+
+def test_no_freeze_means_no_calibration():
+    """Safe mode ou manette d'origine : combo tenu, la manette ne gèle rien -> l'appli ne suit rien."""
+    sim = FirmwareSim("C")
+    tr = cal.CalibrationTracker()
+    tr.arm("C")
+    for _ in range(200):                     # combo complet tenu 1,6 s, sticks libres
+        g = tr.feed(sim.pad({"A", "X", "Y", "R"}))
+    assert tr.state == cal.ARMED and tr.error and "safe mode" in g.detail
+    for _ in range(300):                     # l'utilisateur bouge le stick principal : rien ne doit avancer
+        tr.feed(adapter.PadState(connected=True, ax=128 + 90, ay=128 + 40))
+    assert tr.state == cal.ARMED and tr.step == -1
+    # nouvel essai, cette fois la manette réagit
+    enter_calibration(tr, sim, "C", hold_after=5)
+    assert tr.state == cal.MEASURE and tr.step == 0 and tr.error is None
+    check(run(sim, tr, ["A"] * 44))
+    assert tr.state == cal.DONE
+
+
+def test_freeze_without_combo_is_ignored():
+    """Un gel dû à un autre réglage (pas de A+X+Y juste avant) ne démarre pas le suivi."""
+    tr = cal.CalibrationTracker()
+    tr.arm("A")
+    for _ in range(250):
+        tr.feed(FROZEN_PAD)
+    assert tr.state == cal.ARMED
+
+
+def test_wrong_stick_combo_is_followed():
+    """Appli réglée sur C-stick mais combo A+X+Y+L : la manette calibre le stick analogique, l'appli suit."""
+    sim = FirmwareSim("A")
+    tr = cal.CalibrationTracker()
+    tr.arm("C")
+    for _ in range(20):
+        tr.feed(sim.pad({"A", "X", "Y"}))
+    for _ in range(3):
+        tr.feed(sim.pad({"A", "X", "Y", "L"}))   # L vu juste avant le gel
+    sim.start()
+    for _ in range(250):
+        g = tr.feed(FROZEN_PAD)
+    assert tr.state == cal.FROZEN and tr.stick == "A" and "stick analogique" in g.detail
+    for _ in range(5):
+        tr.feed(sim.pad())
+    check(run(sim, tr, ["A"] * 44))
+    assert tr.state == cal.DONE
+
+
+def test_timestamps_drive_timeout():
+    """Avec horodatage réel (adaptateur 1000 Hz) le délai de confirmation suit le temps, pas les trames."""
+    sim = FirmwareSim("C")
+    tr = cal.CalibrationTracker()
+    tr.arm("C")
+    for i in range(400):                     # 0,4 s à 1000 Hz : pas encore d'erreur
+        p = sim.pad({"A", "X", "Y", "R"})
+        p.t = 10.0 + i / 1000
+        tr.feed(p)
+    assert tr.error is None
+    for i in range(400, 800):
+        p = sim.pad({"A", "X", "Y", "R"})
+        p.t = 10.0 + i / 1000
+        tr.feed(p)
+    assert tr.error
 
 
 def test_undo_and_skip():

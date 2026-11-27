@@ -57,6 +57,14 @@ object Cal {
 
     const val TARGET_CENTER_RADIUS = 25.0
     const val TARGET_NOTCH_RADIUS = 60.0
+
+    /** freezeSticks() du firmware : les 4 axes sont envoyés à 255, aucun bouton, pendant 2 s. */
+    const val FREEZE_MIN = 250
+    const val COMBO_MEMORY = 1.5        // s : boutons du combo vus récemment avant le gel
+    const val CONFIRM_TIMEOUT = 0.6     // s : combo complet tenu sans gel = la manette n'a pas réagi
+    const val FALLBACK_RATE = 125.0     // Hz, pour dater les trames sans horodatage
+
+    fun isFrozen(p: PadState) = minOf(minOf(p.ax, p.ay), minOf(p.cx, p.cy)) >= FREEZE_MIN && p.buttons.isEmpty()
 }
 
 enum class CalState { IDLE, ARMED, FROZEN, MEASURE, ADJUST, DONE }
@@ -79,11 +87,21 @@ class CalibrationTracker(var stick: Char = 'A') {
     private var lastTargetKind: String? = null
     private var target: Pair<Double, Double>? = null
     private var centerFrames = 0
+    private var frames = 0L
+    private val seen = HashMap<String, Double>()
+    private var comboSince: Double? = null
+    /** combo tenu sans réaction de la manette (safe mode, manette non Phob) */
+    var error: String? = null
+        private set
+    /** stick corrigé d'après le combo réellement utilisé */
+    var notice: String? = null
+        private set
 
     val combo: List<String> get() = if (stick == 'A') listOf("A", "X", "Y", "L") else listOf("A", "X", "Y", "R")
 
     fun arm(s: Char) {
         stick = s; state = CalState.ARMED; step = -1; lastTargetKind = null; centerFrames = 0
+        seen.clear(); comboSince = null; error = null; notice = null
     }
 
     fun reset() {
@@ -92,16 +110,51 @@ class CalibrationTracker(var stick: Char = 'A') {
 
     private fun other(p: PadState) = if (stick == 'A') p.cX to p.cY else p.aX to p.aY
 
+    private fun recent(name: String, now: Double) = seen[name]?.let { now - it <= Cal.COMBO_MEMORY } ?: false
+
+    /**
+     * Le combo complet n'apparaît presque jamais dans les rapports : le firmware gèle sa sortie dans la même
+     * boucle. La preuve que la calibration a démarré, c'est le gel (4 axes à 255) juste après A+X+Y.
+     */
+    private fun armStep(p: PadState, now: Double) {
+        if (Cal.isFrozen(p)) {
+            if (listOf("A", "X", "Y").all { recent(it, now) }) {
+                val tl = seen["L"] ?: -1e9; val tr = seen["R"] ?: -1e9
+                if (recent("L", now) || recent("R", now)) {
+                    val real = if (tl > tr) 'A' else 'C'
+                    if (real != stick) {
+                        notice = "Combo du ${if (real == 'A') "stick analogique" else "C-stick"} détecté : c'est lui que " +
+                            "la manette calibre, l'appli suit ce stick."
+                        stick = real
+                    }
+                }
+                state = CalState.FROZEN; error = null
+            }
+            return
+        }
+        for (b in p.buttons) seen[b] = now
+        if (p.pressed(*combo.toTypedArray())) {
+            val since = comboSince
+            if (since == null) comboSince = now
+            else if (now - since > Cal.CONFIRM_TIMEOUT)
+                error = "La manette n'est pas entrée en calibration : ses sticks ne se sont pas figés. Elle est sans " +
+                    "doute en safe mode (maintiens A+X+Y+Start quelques secondes pour le désactiver), ou ce n'est pas une PhobGCC."
+        } else comboSince = null
+    }
+
     fun feed(p: PadState): Guidance {
+        frames++
+        val now = if (p.t > 0) p.t else frames / Cal.FALLBACK_RATE
         val held = p.buttons
         val down = held - prevButtons
         prevButtons = held
         when (state) {
-            CalState.ARMED -> if (p.pressed(*combo.toTypedArray())) state = CalState.FROZEN
-            CalState.FROZEN -> if (held.none { it in combo }) {
+            CalState.ARMED -> armStep(p, now)
+            CalState.FROZEN -> if (!Cal.isFrozen(p)) {
                 state = CalState.MEASURE; step = 0; lastTargetKind = "center"
+                track(p, down)
             }
-            CalState.MEASURE, CalState.ADJUST -> track(p, down)
+            CalState.MEASURE, CalState.ADJUST -> if (!Cal.isFrozen(p)) track(p, down)
             else -> {}
         }
         return guidance()
@@ -171,11 +224,13 @@ class CalibrationTracker(var stick: Char = 'A') {
         when (state) {
             CalState.IDLE -> return Guidance(state, -1, "Prêt",
                 "Choisis le stick à calibrer puis appuie sur « Démarrer ».", null, 0.0)
-            CalState.ARMED -> return Guidance(state, -1, "Lance la calibration du $name",
-                "Sur la manette, appuie en même temps sur $comboTxt.\nSi rien ne se passe, la manette est en safe mode : " +
-                    "maintiens A+X+Y+Start quelques secondes pour le désactiver, puis recommence.", null, 0.0)
-            CalState.FROZEN -> return Guidance(state, -1, "Calibration démarrée",
-                "Relâche tous les boutons et laisse le stick au neutre.", null, 0.0)
+            CalState.ARMED -> return error?.let {
+                Guidance(state, -1, "⚠ La manette n'a pas réagi", "$it\nRelâche tout, puis appuie de nouveau sur $comboTxt.", null, 0.0)
+            } ?: Guidance(state, -1, "Lance la calibration du $name",
+                "Sur la manette, appuie en même temps sur $comboTxt.\nL'appli attend que la manette confirme " +
+                    "(sticks figés 2 secondes) avant de te guider.", null, 0.0)
+            CalState.FROZEN -> return Guidance(state, -1, "Calibration du $name confirmée par la manette",
+                (notice?.let { "$it\n" } ?: "") + "Relâche tous les boutons et laisse le $name au neutre.", null, 0.0)
             CalState.DONE -> return Guidance(state, step, "Calibration terminée ✔",
                 "Le firmware a enregistré les points et les angles d'encoches. Vérifie le résultat dans le testeur " +
                     "ou avec Visual Controller Test.", null, 1.0)

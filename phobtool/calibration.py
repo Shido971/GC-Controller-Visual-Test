@@ -13,6 +13,12 @@ Reproduit la logique du firmware (common/stick.h, common/phobGCC.h, v0.29+) :
 Pendant toute la calibration le firmware affiche la position cible sur
 *l'autre* stick. On s'en sert pour se resynchroniser : l'appli n'a pas besoin
 de deviner, elle lit ce que la manette lui montre.
+
+Entrée en calibration : le firmware appelle freezeSticks(2000) dès que le combo
+est complet. Pendant 2 s la manette envoie alors les 4 axes à 255 et aucun bouton.
+C'est la seule preuve fiable que la calibration a démarré : le combo complet
+n'apparaît presque jamais dans les rapports (la sortie est gelée dans la même
+boucle), et une manette en safe mode ou d'origine ne gèle rien du tout.
 """
 from __future__ import annotations
 
@@ -75,6 +81,15 @@ PHASE2_STEP_FOR_NOTCH = {n: NO_OF_CAL_POINTS + k for k, n in enumerate(NOTCH_ADJ
 IDLE, ARMED, FROZEN, MEASURE, ADJUST, DONE = "idle", "armed", "frozen", "measure", "adjust", "done"
 TARGET_CENTER_RADIUS = 25     # en dessous : la cible affichée est le neutre
 TARGET_NOTCH_RADIUS = 60      # au-dessus : la cible affichée est une encoche
+FREEZE_MIN = 250              # freezeSticks : les 4 axes sont envoyés à 255
+COMBO_MEMORY = 1.5            # s : boutons du combo vus récemment avant le gel
+CONFIRM_TIMEOUT = 0.6         # s : combo complet tenu sans gel = la manette n'a pas réagi
+FALLBACK_RATE = 125.0         # Hz, pour dater les trames sans horodatage
+
+
+def is_frozen(pad: PadState) -> bool:
+    """Signature de freezeSticks() du firmware PhobGCC."""
+    return min(pad.ax, pad.ay, pad.cx, pad.cy) >= FREEZE_MIN and not pad.buttons
 
 
 @dataclass
@@ -97,6 +112,11 @@ class CalibrationTracker:
         self._target_xy: Optional[tuple[float, float]] = None
         self._frozen_frames = 0
         self._center_frames = 0
+        self._frames = 0
+        self._seen: dict[str, float] = {}       # bouton -> dernier instant où il était tenu
+        self._combo_since: Optional[float] = None
+        self.error: Optional[str] = None        # combo sans réaction de la manette
+        self.notice: Optional[str] = None       # ex. : stick corrigé d'après le combo réellement utilisé
 
     # ------------------------------------------------------------------
     def arm(self, stick: str) -> None:
@@ -105,6 +125,10 @@ class CalibrationTracker:
         self.step = -1
         self._last_target_kind = None
         self._center_frames = 0
+        self._seen = {}
+        self._combo_since = None
+        self.error = None
+        self.notice = None
 
     def reset(self) -> None:
         self.state = IDLE
@@ -118,24 +142,62 @@ class CalibrationTracker:
         return pad.c_xy if self.stick == "A" else pad.a_xy
 
     # ------------------------------------------------------------------
+    def _now(self, pad: PadState) -> float:
+        t = getattr(pad, "t", 0.0) or 0.0
+        return t if t > 0 else self._frames / FALLBACK_RATE
+
+    def _recent(self, name: str, now: float) -> bool:
+        t = self._seen.get(name)
+        return t is not None and now - t <= COMBO_MEMORY
+
+    def _arm_step(self, pad: PadState, now: float) -> None:
+        if is_frozen(pad):
+            if all(self._recent(b, now) for b in ("A", "X", "Y")):
+                # quel stick le firmware calibre-t-il vraiment ? L = stick analogique, R = C-stick
+                tl, tr = self._seen.get("L", -1e9), self._seen.get("R", -1e9)
+                real = None
+                if self._recent("L", now) or self._recent("R", now):
+                    real = "A" if tl > tr else "C"
+                if real and real != self.stick:
+                    self.notice = ("Combo du {} détecté : c'est lui que la manette calibre, l'appli suit "
+                                   "ce stick.".format("stick analogique" if real == "A" else "C-stick"))
+                    self.stick = real
+                self.state = FROZEN
+                self._frozen_frames = 0
+                self.error = None
+            return
+        for b in pad.buttons:
+            self._seen[b] = now
+        if pad.pressed(*self.combo):
+            if self._combo_since is None:
+                self._combo_since = now
+            elif now - self._combo_since > CONFIRM_TIMEOUT:
+                self.error = ("La manette n'est pas entrée en calibration : ses sticks ne se sont pas figés. "
+                              "Elle est sans doute en safe mode (maintiens A+X+Y+Start quelques secondes "
+                              "pour le désactiver), ou ce n'est pas une PhobGCC.")
+        else:
+            self._combo_since = None
+
     def feed(self, pad: PadState) -> Guidance:
+        self._frames += 1
+        now = self._now(pad)
         held = pad.buttons
         down = held - self._prev_buttons
         self._prev_buttons = held
 
         if self.state == ARMED:
-            if pad.pressed(*self.combo):
-                self.state = FROZEN
-                self._frozen_frames = 0
+            self._arm_step(pad, now)
         elif self.state == FROZEN:
-            # le firmware gèle les sticks ~2 s ; on attend que les boutons du combo soient relâchés
+            # le firmware gèle les sorties 2 s, puis affiche la première cible (le neutre)
             self._frozen_frames += 1
-            if not (held & set(self.combo)):
+            if not is_frozen(pad):
                 self.state = MEASURE
                 self.step = 0
                 self._last_target_kind = "center"
+                self._track(pad, down)
         elif self.state in (MEASURE, ADJUST):
-            self._track(pad, down)
+            if not is_frozen(pad):
+                self._track(pad, down)
 
         return self.guidance()
 
@@ -212,13 +274,17 @@ class CalibrationTracker:
         if self.state == IDLE:
             return Guidance(IDLE, -1, "Prêt", "Choisis le stick à calibrer puis clique sur « Démarrer ».", None, 0.0)
         if self.state == ARMED:
+            if self.error:
+                return Guidance(ARMED, -1, "⚠ La manette n'a pas réagi", self.error +
+                                f"\nRelâche tout, puis appuie de nouveau sur {combo}.", None, 0.0)
             return Guidance(ARMED, -1, f"Lance la calibration du {name}",
                             f"Sur la manette, appuie en même temps sur {combo}.\n"
-                            "Si rien ne se passe, la manette est en safe mode : maintiens A+X+Y+Start "
-                            "quelques secondes pour le désactiver, puis recommence.", None, 0.0)
+                            "L'appli attend que la manette confirme (sticks figés 2 secondes) avant de te guider.",
+                            None, 0.0)
         if self.state == FROZEN:
-            return Guidance(FROZEN, -1, "Calibration démarrée",
-                            "Relâche tous les boutons et laisse le stick au neutre.", None, 0.0)
+            return Guidance(FROZEN, -1, f"Calibration du {name} confirmée par la manette",
+                            (self.notice + "\n" if self.notice else "") +
+                            f"Relâche tous les boutons et laisse le {name} au neutre.", None, 0.0)
         if self.state == DONE:
             return Guidance(DONE, self.step, "Calibration terminée ✔",
                             "Le firmware a enregistré les points et les angles d'encoches. "

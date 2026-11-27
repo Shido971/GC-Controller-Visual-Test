@@ -536,6 +536,9 @@ class MainWindow(QMainWindow):
 
     def _render_pad(self, port: int, pad: PadState, g):
         a, c = pad.a_xy, pad.c_xy
+        # le suivi a pu corriger le stick d'après le combo réellement utilisé sur la manette
+        if g.state not in ("idle", "armed") and self.stick_a.isChecked() != (self.tracker.stick == "A"):
+            (self.stick_a if self.tracker.stick == "A" else self.stick_c).setChecked(True)
         target = g.target_xy if g.state in (MEASURE, ADJUST) else None
         notch = step_notch(g.step) if g.state in (MEASURE, ADJUST) else None
         if self.tracker.stick == "A" and target is not None:

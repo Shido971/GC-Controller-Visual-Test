@@ -38,6 +38,8 @@ class TestPage(private val ctx: Context) : Page {
     private var stick = 'A'
     private var latest: Pair<Int, PadState>? = null
     private var guidance: Guidance = tracker.guidance()
+    private lateinit var stickRadios: android.widget.RadioGroup
+    private var syncingStick = false
 
     private val title = ctx.text("Prêt", 19f, bold = true)
     private val detail = ctx.text("", 14f)
@@ -59,7 +61,10 @@ class TestPage(private val ctx: Context) : Page {
             add(ctx.spinner(listOf("Auto", "Port 1", "Port 2", "Port 3", "Port 4")) { port = it - 1 },
                 w = 0, weight = 1f)
         })
-        ctl.add(ctx.radios(listOf("Stick analogique", "C-stick")) { stick = if (it == 0) 'A' else 'C'; tracker.reset(); refreshGuidance() })
+        stickRadios = ctx.radios(listOf("Stick analogique", "C-stick")) {
+            if (!syncingStick) { stick = if (it == 0) 'A' else 'C'; tracker.reset(); refreshGuidance() }
+        }
+        ctl.add(stickRadios)
         ctl.add(ctx.hbox().apply {
             add(ctx.button("Démarrer", primary = true) { tracker.arm(stick); viewA.clearTrail(); viewC.clearTrail(); refreshGuidance() },
                 w = 0, weight = 1f)
@@ -116,7 +121,22 @@ class TestPage(private val ctx: Context) : Page {
         if (pads == null) info.text = status
     }
 
+    /** le suivi a pu corriger le stick d'après le combo réellement utilisé sur la manette */
+    private fun syncStickChoice() {
+        val st = guidance.state
+        if (st == CalState.IDLE || st == CalState.ARMED || tracker.stick == stick) return
+        syncingStick = true
+        stick = tracker.stick
+        val idx = if (stick == 'A') 0 else 1
+        for (i in 0 until stickRadios.childCount) {
+            val rb = stickRadios.getChildAt(i) as android.widget.RadioButton
+            if (rb.tag == idx) rb.isChecked = true
+        }
+        syncingStick = false
+    }
+
     override fun onFrame() {
+        syncStickChoice()
         val sel = latest
         if (sel == null) {
             viewA.set(null); viewC.set(null)
